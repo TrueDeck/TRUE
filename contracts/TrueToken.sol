@@ -163,6 +163,29 @@ contract ERC20 is ERC20Basic {
     );
 }
 
+contract ERC223Interface {
+    function balanceOf(address who) public view returns (uint256);
+    function transfer(address to, uint256 value) public returns (bool);
+    function transfer(address to, uint256 value, bytes data) public returns (bool);
+    event Transfer(
+        address indexed from,
+        address indexed to,
+        uint256 value,
+        bytes data
+    );
+}
+
+contract ERC223ReceivingContract {
+    /**
+     * @dev Standard ERC223 function that will handle incoming token transfers.
+     *
+     * @param _from  Token sender address.
+     * @param _value Amount of tokens.
+     * @param _data  Transaction metadata.
+     */
+    function tokenFallback(address _from, uint256 _value, bytes _data) public;
+}
+
 /**
  * @title PoSTokenStandard
  * @dev the interface of PoSTokenStandard
@@ -184,9 +207,9 @@ contract PoSTokenStandard {
 
 /**
  * @title TRUE Token
- * @dev ERC20 POS Token for TrueDeck Platform
+ * @dev ERC20, ERC223, PoS Token for TrueDeck Platform
  */
-contract TrueToken is ERC20, PoSTokenStandard, Pausable {
+contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     using SafeMath for uint256;
 
     event CoinAgeRecordEvent(
@@ -281,7 +304,46 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
     }
 
     /**
-    * @dev transfer token for a specified address
+    * @dev Transfer the specified amount of tokens to the specified address.
+    *      - Invokes the `tokenFallback` function if the recipient is a contract.
+    *        The token transfer fails if the recipient is a contract
+    *        but does not implement the `tokenFallback` function
+    *        or the fallback function to receive funds.
+    *      - Records coin age if the recipient is not a contract
+    *
+    * @param _to    Receiver address.
+    * @param _value Amount of tokens that will be transferred.
+    * @param _data  Transaction metadata.
+    */
+    function transfer(address _to, uint256 _value, bytes _data) public whenNotPaused returns (bool) {
+        require(_to != address(0));
+
+        if (msg.sender == _to) {
+            return mint();
+        }
+
+        require(_value <= balances[msg.sender]);
+
+        bool flag = isContract(_to);
+
+        balances[msg.sender] = balances[msg.sender].sub(_value);
+        balances[_to] = balances[_to].add(_value);
+        if (flag) {
+            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
+            receiver.tokenFallback(msg.sender, _value, _data);
+        }
+        emit Transfer(msg.sender, _to, _value, _data);
+
+        logCoinAgeRecord(msg.sender, _to, _value, flag);
+
+        return true;
+    }
+
+    /**
+    * @dev Transfer the specified amount of tokens to the specified address.
+    *      This function works the same with the previous one
+    *      but doesn't contain `_data` param.
+    *      Added due to backwards compatibility reasons.
     * @param _to The address to transfer to.
     * @param _value The amount to be transferred.
     */
@@ -294,11 +356,18 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
 
         require(_value <= balances[msg.sender]);
 
+        bytes memory empty;
+        bool flag = isContract(_to);
+
         balances[msg.sender] = balances[msg.sender].sub(_value);
         balances[_to] = balances[_to].add(_value);
-        emit Transfer(msg.sender, _to, _value);
+        if (flag) {
+            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
+            receiver.tokenFallback(msg.sender, _value, empty);
+        }
+        emit Transfer(msg.sender, _to, _value, empty);
 
-        logCoinAgeRecord(msg.sender, _to, _value);
+        logCoinAgeRecord(msg.sender, _to, _value, flag);
 
         return true;
     }
@@ -320,8 +389,9 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
         allowed[_from][msg.sender] = allowed[_from][msg.sender].sub(_value);
         emit Transfer(_from, _to, _value);
 
+        // Coin age should not be recorded if receiver is the sender.
         if (_from != _to) {
-            logCoinAgeRecord(_from, _to, _value);
+            logCoinAgeRecord(_from, _to, _value, isContract(_to));
         }
 
         return true;
@@ -364,7 +434,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
      * @param _spender The address which will spend the funds.
      * @param _addedValue The amount of tokens to increase the allowance by.
      */
-    function increaseApproval(address _spender, uint _addedValue) public whenNotPaused returns (bool) {
+    function increaseApproval(address _spender, uint256 _addedValue) public whenNotPaused returns (bool) {
         require(_spender != address(0));
         allowed[msg.sender][_spender] = (allowed[msg.sender][_spender].add(_addedValue));
         emit Approval(msg.sender, _spender, allowed[msg.sender][_spender]);
@@ -381,9 +451,9 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
      * @param _spender The address which will spend the funds.
      * @param _subtractedValue The amount of tokens to decrease the allowance by.
      */
-    function decreaseApproval(address _spender, uint _subtractedValue) public whenNotPaused returns (bool) {
+    function decreaseApproval(address _spender, uint256 _subtractedValue) public whenNotPaused returns (bool) {
         require(_spender != address(0));
-        uint oldValue = allowed[msg.sender][_spender];
+        uint256 oldValue = allowed[msg.sender][_spender];
         if (_subtractedValue > oldValue) {
             allowed[msg.sender][_spender] = 0;
         } else {
@@ -527,14 +597,27 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
     }
 
     /**
+    * @dev Returns true if the given _address is a contract, false otherwise.
+    */
+    function isContract(address _address) private view returns (bool) {
+        uint256 length;
+        assembly {
+            //retrieve the size of the code on target address, this needs assembly
+            length := extcodesize(_address)
+        }
+        return (length>0);
+    }
+
+    /**
     * @dev Logs coinage record for sender and receiver.
     *      Deletes sender's previous coinage records if any.
     *
     * @param _from address The address which you want to send tokens from
     * @param _to address The address which you want to transfer to
     * @param _value uint256 the amount of tokens to be transferred
+    * @param _isContract bool if the receiver is a contract
     */
-    function logCoinAgeRecord(address _from, address _to, uint256 _value) internal returns (bool) {
+    function logCoinAgeRecord(address _from, address _to, uint256 _value, bool _isContract) private returns (bool) {
         if (coinAgeRecordMap[_from].length > 0) {
             delete coinAgeRecordMap[_from];
         }
@@ -546,7 +629,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
             emit CoinAgeResetEvent(_from, balances[_from], _now);
         }
 
-        if (_value != 0) {
+        if (_value != 0 && !_isContract) {
             coinAgeRecordMap[_to].push(CoinAgeRecord(_value, _now));
             emit CoinAgeRecordEvent(_to, _value, _now);
         }
@@ -560,7 +643,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
     * @param _address address The address for which reward will be calculated
     * @param _now timestamp The time for which the reward will be calculated
     */
-    function calculateRewardInternal(address _address, uint256 _now) internal view returns (uint256) {
+    function calculateRewardInternal(address _address, uint256 _now) private view returns (uint256) {
         uint256 _coinAge = getCoinAgeInternal(_address, _now);
         if (_coinAge <= 0) {
             return 0;
@@ -577,7 +660,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
     * @param _address address The address for which coinage will be calculated
     * @param _now timestamp The time for which the coinage will be calculated
     */
-    function getCoinAgeInternal(address _address, uint256 _now) internal view returns (uint256 _coinAge) {
+    function getCoinAgeInternal(address _address, uint256 _now) private view returns (uint256 _coinAge) {
         if (coinAgeRecordMap[_address].length <= 0) {
             return 0;
         }
@@ -601,7 +684,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
     *
     * @param _now timestamp The time for which the annual interest will be calculated
     */
-    function getAnnualInterest(uint256 _now) internal view returns(uint256 interest) {
+    function getAnnualInterest(uint256 _now) private view returns(uint256 interest) {
         if (stakeStartTime > 0 && _now >= stakeStartTime && totalSupply_ < MAX_TOTAL_SUPPLY) {
             uint256 secondsPassed = _now.sub(stakeStartTime);
             // 1st Year = 30% annually
