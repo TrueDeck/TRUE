@@ -320,7 +320,9 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
         allowed[_from][msg.sender] = allowed[_from][msg.sender].sub(_value);
         emit Transfer(_from, _to, _value);
 
-        logCoinAgeRecord(_from, _to, _value);
+        if (_from != _to) {
+            logCoinAgeRecord(_from, _to, _value);
+        }
 
         return true;
     }
