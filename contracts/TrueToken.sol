@@ -418,8 +418,8 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
             return false;
         }
 
-        if (reward > MAX_TOTAL_SUPPLY - totalSupply_) {
-            reward = MAX_TOTAL_SUPPLY - totalSupply_;
+        if (reward > MAX_TOTAL_SUPPLY.sub(totalSupply_)) {
+            reward = MAX_TOTAL_SUPPLY.sub(totalSupply_);
         }
 
         totalSupply_ = totalSupply_.add(reward);
@@ -566,7 +566,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
 
         uint256 interest = getAnnualInterest(_now);
 
-        return (_coinAge * interest).div(365 * 100);
+        return (_coinAge.mul(interest)).div(365 * 100);
     }
 
     /**
@@ -590,7 +590,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
                 secondsPassed = stakeMaxAge;
             }
 
-            _coinAge = _coinAge.add(coinAgeRecordMap[_address][i].amount * secondsPassed.div(1 days));
+            _coinAge = _coinAge.add((coinAgeRecordMap[_address][i].amount).mul(secondsPassed.div(1 days)));
         }
     }
 
