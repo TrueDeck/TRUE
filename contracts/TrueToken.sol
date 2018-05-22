@@ -290,7 +290,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
         chainStartBlockNumber = block.number;
 
         stakeMinAge = 3 days;
-        stakeMaxAge = 45 days;
+        stakeMaxAge = 60 days;
 
         balances[msg.sender] = INITIAL_SUPPLY;
         totalSupply_ = INITIAL_SUPPLY;
