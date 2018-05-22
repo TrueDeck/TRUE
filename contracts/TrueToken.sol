@@ -54,6 +54,9 @@ library SafeMath {
 contract Ownable {
     address public owner;
 
+    event OwnershipRenounced(
+        address indexed previousOwner
+    );
     event OwnershipTransferred(
         address indexed previousOwner,
         address indexed newOwner
@@ -197,9 +200,9 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
         uint64 time
     );
 
-    string public name = "TRUE Token";
-    string public symbol = "TRUE";
-    uint8 public decimals = 18;
+    string public constant name = "TRUE Token";
+    string public constant symbol = "TRUE";
+    uint8 public constant decimals = 18;
 
     mapping (address => uint256) balances;
 
@@ -333,6 +336,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
      * @param _value The amount of tokens to be spent.
      */
     function approve(address _spender, uint256 _value) public whenNotPaused returns (bool) {
+        require(_spender != address(0));
         allowed[msg.sender][_spender] = _value;
         emit Approval(msg.sender, _spender, _value);
         return true;
@@ -359,6 +363,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
      * @param _addedValue The amount of tokens to increase the allowance by.
      */
     function increaseApproval(address _spender, uint _addedValue) public whenNotPaused returns (bool) {
+        require(_spender != address(0));
         allowed[msg.sender][_spender] = (allowed[msg.sender][_spender].add(_addedValue));
         emit Approval(msg.sender, _spender, allowed[msg.sender][_spender]);
         return true;
@@ -375,6 +380,7 @@ contract TrueToken is ERC20, PoSTokenStandard, Pausable {
      * @param _subtractedValue The amount of tokens to decrease the allowance by.
      */
     function decreaseApproval(address _spender, uint _subtractedValue) public whenNotPaused returns (bool) {
+        require(_spender != address(0));
         uint oldValue = allowed[msg.sender][_spender];
         if (_subtractedValue > oldValue) {
             allowed[msg.sender][_spender] = 0;
