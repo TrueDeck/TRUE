@@ -163,29 +163,6 @@ contract ERC20 is ERC20Basic {
     );
 }
 
-contract ERC223Interface {
-    function balanceOf(address who) public view returns (uint256);
-    function transfer(address to, uint256 value) public returns (bool);
-    function transfer(address to, uint256 value, bytes data) public returns (bool);
-    event Transfer(
-        address indexed from,
-        address indexed to,
-        uint256 value,
-        bytes data
-    );
-}
-
-contract ERC223ReceivingContract {
-    /**
-     * @dev Standard ERC223 function that will handle incoming token transfers.
-     *
-     * @param _from  Token sender address.
-     * @param _value Amount of tokens.
-     * @param _data  Transaction metadata.
-     */
-    function tokenFallback(address _from, uint256 _value, bytes _data) public;
-}
-
 /**
  * @title PoSTokenStandard
  * @dev the interface of PoSTokenStandard
@@ -206,10 +183,10 @@ contract PoSTokenStandard {
 }
 
 /**
- * @title TRUE Token
- * @dev ERC20, ERC223, PoS Token for TrueDeck Platform
+ * @title TrueDeck TDP Token
+ * @dev ERC20, PoS Token for TrueDeck Platform
  */
-contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
+contract TrueDeckToken is ERC20, PoSTokenStandard, Pausable {
     using SafeMath for uint256;
 
     event CoinAgeRecordEvent(
@@ -223,8 +200,8 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
         uint64 time
     );
 
-    string public constant name = "TRUE Token";
-    string public constant symbol = "TRUE";
+    string public constant name = "TrueDeck";
+    string public constant symbol = "TDP";
     uint8 public constant decimals = 18;
 
     mapping (address => uint256) balances;
@@ -234,14 +211,14 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     uint256 totalSupply_;
 
     /**
-    * @dev Total Number of TRUE tokens that can ever be created.
-    *      200M TRUE Tokens
+    * @dev Total Number of TDP tokens that can ever be created.
+    *      200M TDP Tokens
     */
-    uint256 public MAX_TOTAL_SUPPLY = 200000000 *  10 ** uint256(decimals);
+    uint256 public MAX_TOTAL_SUPPLY = 200000000 * 10 ** uint256(decimals);
 
     /**
-    * @dev Initial supply of TRUE tokens.
-    *      70M TRUE Tokens
+    * @dev Initial supply of TDP tokens.
+    *      70M TDP Tokens
     *      35% of Maximum Total Supply
     *      Will be distributed as follows:
     *           5% : Platform Partners
@@ -250,7 +227,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     *           4% : Bounty (Vested over 6 months)
     *          10% : Development (Vested over 12 months)
     */
-    uint256 public INITIAL_SUPPLY = 70000000 *  10 ** uint256(decimals);
+    uint256 public INITIAL_SUPPLY = 70000000 * 10 ** uint256(decimals);
 
     /**
     * @dev Time at which the contract was deployed
@@ -281,12 +258,12 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
      *      - When total supply has not reached MAX_TOTAL_SUPPLY.
      */
     modifier canMint() {
-        require(stakeStartTime > 0 && now >= stakeStartTime && totalSupply_ < MAX_TOTAL_SUPPLY);
+        require(stakeStartTime > 0 && now >= stakeStartTime && totalSupply_ < MAX_TOTAL_SUPPLY);            // solium-disable-line
         _;
     }
 
     constructor() public {
-        chainStartTime = now;
+        chainStartTime = now;                                                                               // solium-disable-line
         chainStartBlockNumber = block.number;
 
         stakeMinAge = 3 days;
@@ -301,42 +278,6 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     */
     function totalSupply() public view returns (uint256) {
         return totalSupply_;
-    }
-
-    /**
-    * @dev Transfer the specified amount of tokens to the specified address.
-    *      - Invokes the `tokenFallback` function if the recipient is a contract.
-    *        The token transfer fails if the recipient is a contract
-    *        but does not implement the `tokenFallback` function
-    *        or the fallback function to receive funds.
-    *      - Records coin age if the recipient is not a contract
-    *
-    * @param _to    Receiver address.
-    * @param _value Amount of tokens that will be transferred.
-    * @param _data  Transaction metadata.
-    */
-    function transfer(address _to, uint256 _value, bytes _data) public whenNotPaused returns (bool) {
-        require(_to != address(0));
-
-        if (msg.sender == _to) {
-            return mint();
-        }
-
-        require(_value <= balances[msg.sender]);
-
-        bool flag = isContract(_to);
-
-        balances[msg.sender] = balances[msg.sender].sub(_value);
-        balances[_to] = balances[_to].add(_value);
-        if (flag) {
-            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
-            receiver.tokenFallback(msg.sender, _value, _data);
-        }
-        emit Transfer(msg.sender, _to, _value, _data);
-
-        logCoinAgeRecord(msg.sender, _to, _value, flag);
-
-        return true;
     }
 
     /**
@@ -356,18 +297,11 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
 
         require(_value <= balances[msg.sender]);
 
-        bytes memory empty;
-        bool flag = isContract(_to);
-
         balances[msg.sender] = balances[msg.sender].sub(_value);
         balances[_to] = balances[_to].add(_value);
-        if (flag) {
-            ERC223ReceivingContract receiver = ERC223ReceivingContract(_to);
-            receiver.tokenFallback(msg.sender, _value, empty);
-        }
-        emit Transfer(msg.sender, _to, _value, empty);
+        emit Transfer(msg.sender, _to, _value);
 
-        logCoinAgeRecord(msg.sender, _to, _value, flag);
+        logCoinAgeRecord(msg.sender, _to, _value);
 
         return true;
     }
@@ -391,7 +325,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
 
         // Coin age should not be recorded if receiver is the sender.
         if (_from != _to) {
-            logCoinAgeRecord(_from, _to, _value, isContract(_to));
+            logCoinAgeRecord(_from, _to, _value);
         }
 
         return true;
@@ -473,7 +407,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     }
 
     /**
-    * @dev Mints new TRUE token and rewards to caller as per the coin age.
+    * @dev Mints new TDP token and rewards to caller as per the coin age.
     *      Deletes all previous coinage records and resets with new coin age record.
     */
     function mint() public whenNotPaused canMint returns (bool) {
@@ -485,7 +419,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
             return false;
         }
 
-        uint256 reward = calculateRewardInternal(msg.sender, now);
+        uint256 reward = calculateRewardInternal(msg.sender, now);                                          // solium-disable-line
         if (reward <= 0) {
             return false;
         }
@@ -497,8 +431,9 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
         totalSupply_ = totalSupply_.add(reward);
         balances[msg.sender] = balances[msg.sender].add(reward);
         emit Mint(msg.sender, reward);
+        emit Transfer(address(0), msg.sender, reward);
 
-        uint64 _now = uint64(now);
+        uint64 _now = uint64(now);                                                                          // solium-disable-line
         delete coinAgeRecordMap[msg.sender];
         coinAgeRecordMap[msg.sender].push(CoinAgeRecord(balances[msg.sender], _now));
         emit CoinAgeResetEvent(msg.sender, balances[msg.sender], _now);
@@ -510,21 +445,21 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     * @dev Returns coinage for the caller address
     */
     function coinAge() public view returns (uint256) {
-         return getCoinAgeInternal(msg.sender, now);
+        return getCoinAgeInternal(msg.sender, now);                                                         // solium-disable-line
     }
 
     /**
     * @dev Returns current annual interest
     */
     function annualInterest() public view returns(uint256) {
-        return getAnnualInterest(now);
+        return getAnnualInterest(now);                                                                      // solium-disable-line
     }
 
     /**
     * @dev Calculates and returns proof-of-stake reward
     */
     function calculateReward() public view returns (uint256) {
-        return calculateRewardInternal(msg.sender, now);
+        return calculateRewardInternal(msg.sender, now);                                                    // solium-disable-line
     }
 
     /**
@@ -556,7 +491,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     * @param _address address The address for which coinage will be calculated
     */
     function coinAgeForAddress(address _address) public view onlyOwner returns (uint256) {
-         return getCoinAgeInternal(_address, now);
+        return getCoinAgeInternal(_address, now);                                                           // solium-disable-line
     }
 
     /**
@@ -566,7 +501,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     * @param _now timestamp The time for which the coinage will be calculated
     */
     function coinAgeForAddressAt(address _address, uint256 _now) public view onlyOwner returns (uint256) {
-         return getCoinAgeInternal(_address, _now);
+        return getCoinAgeInternal(_address, _now);
     }
 
     /**
@@ -575,7 +510,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     * @param _address address The address for which reward will be calculated
     */
     function calculateRewardForAddress(address _address) public view onlyOwner returns (uint256) {
-        return calculateRewardInternal(_address, now);
+        return calculateRewardInternal(_address, now);                                                      // solium-disable-line
     }
 
     /**
@@ -592,7 +527,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     * @dev Sets the stake start time
     */
     function startStakingAt(uint256 timestamp) public onlyOwner {
-        require(stakeStartTime <= 0 && timestamp >= chainStartTime && timestamp > now);
+        require(stakeStartTime <= 0 && timestamp >= chainStartTime && timestamp > now);                     // solium-disable-line
         stakeStartTime = timestamp;
     }
 
@@ -601,6 +536,7 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
     */
     function isContract(address _address) private view returns (bool) {
         uint256 length;
+        /* solium-disable-next-line */
         assembly {
             //retrieve the size of the code on target address, this needs assembly
             length := extcodesize(_address)
@@ -608,28 +544,29 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
         return (length>0);
     }
 
+
     /**
     * @dev Logs coinage record for sender and receiver.
     *      Deletes sender's previous coinage records if any.
+    *      Doesn't record coinage for contracts.
     *
     * @param _from address The address which you want to send tokens from
     * @param _to address The address which you want to transfer to
     * @param _value uint256 the amount of tokens to be transferred
-    * @param _isContract bool if the receiver is a contract
     */
-    function logCoinAgeRecord(address _from, address _to, uint256 _value, bool _isContract) private returns (bool) {
+    function logCoinAgeRecord(address _from, address _to, uint256 _value) private returns (bool) {
         if (coinAgeRecordMap[_from].length > 0) {
             delete coinAgeRecordMap[_from];
         }
 
-        uint64 _now = uint64(now);
+        uint64 _now = uint64(now);                                                                          // solium-disable-line
 
-        if (balances[_from] != 0) {
+        if (balances[_from] != 0 && !isContract(_from)) {
             coinAgeRecordMap[_from].push(CoinAgeRecord(balances[_from], _now));
             emit CoinAgeResetEvent(_from, balances[_from], _now);
         }
 
-        if (_value != 0 && !_isContract) {
+        if (_value != 0 && !isContract(_to)) {
             coinAgeRecordMap[_to].push(CoinAgeRecord(_value, _now));
             emit CoinAgeRecordEvent(_to, _value, _now);
         }
@@ -704,5 +641,34 @@ contract TrueToken is ERC20, ERC223Interface, PoSTokenStandard, Pausable {
         } else {
             interest = 0;
         }
+    }
+
+    /**
+    * @dev Batch token transfer. Used by contract creator to distribute initial tokens.
+    *      Does not record any coinage for the owner.
+    *
+    * @param _recipients Array of address
+    * @param _values Array of amount
+    */
+    function batchTransfer(address[] _recipients, uint256[] _values) public onlyOwner returns (bool) {
+        require(_recipients.length > 0 && _recipients.length == _values.length);
+
+        uint256 total = 0;
+        for(uint256 i = 0; i < _values.length; i++) {
+            total = total.add(_values[i]);
+        }
+        require(total <= balances[msg.sender]);
+
+        uint64 _now = uint64(now);                                                                          // solium-disable-line
+        for(uint256 j = 0; j < _recipients.length; j++){
+            balances[_recipients[j]] = balances[_recipients[j]].add(_values[j]);
+            balances[msg.sender] = balances[msg.sender].sub(_values[j]);
+            emit Transfer(msg.sender, _recipients[j], _values[j]);
+
+            coinAgeRecordMap[_recipients[j]].push(CoinAgeRecord(_values[j], _now));
+            emit CoinAgeRecordEvent(_recipients[j], _values[j], _now);
+        }
+
+        return true;
     }
 }

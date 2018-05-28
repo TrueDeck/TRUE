@@ -1,5 +1,5 @@
-var TrueToken = artifacts.require("TrueToken");
+var TrueDeckToken = artifacts.require("TrueDeckToken");
 
 module.exports = function(deployer) {
-    deployer.deploy(TrueToken);
+    deployer.deploy(TrueDeckToken);
 };
